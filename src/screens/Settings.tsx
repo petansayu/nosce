@@ -49,6 +49,7 @@ export function SettingsScreen({
   }
 
   const provider = PROVIDERS.find((p) => p.id === s.provider)!
+  const custom = s.provider === 'custom'
   const apiKey = s.keys[s.provider] ?? ''
   const model = s.models[s.provider] ?? ''
   const priceKey = `${s.provider}:${model}`
@@ -70,14 +71,14 @@ export function SettingsScreen({
   }
 
   const fetchModels = async () => {
-    if (!apiKey) {
+    if (!apiKey && !custom) {
       setListError('先にAPIキーを入力してください。')
       return
     }
     setLoading(true)
     setListError('')
     try {
-      setModels(await listModels(s.provider, apiKey))
+      setModels(await listModels(s.provider, apiKey, s.customUrl))
     } catch (err) {
       setListError(explainError(err))
     } finally {
@@ -136,8 +137,20 @@ export function SettingsScreen({
             <p className="muted small">おすすめの方法です。キーを貼り付けなくても使えます。</p>
           </div>
         )}
+        {custom && (
+          <label className="field">
+            API Base URL
+            <input
+              type="url"
+              value={s.customUrl}
+              onChange={(e) => update({ customUrl: e.target.value })}
+              placeholder="http://127.0.0.1:8080/v1"
+              autoComplete="off"
+            />
+          </label>
+        )}
         <label className="field">
-          {s.provider === 'openrouter' ? 'またはAPIキーを入力' : 'APIキー'}
+          {s.provider === 'openrouter' ? 'またはAPIキーを入力' : custom ? 'APIキー(任意)' : 'APIキー'}
           <input
             type="password"
             value={apiKey}
@@ -146,12 +159,16 @@ export function SettingsScreen({
             autoComplete="off"
           />
         </label>
-        <p className="muted small">
-          <a href={provider.keyUrl} target="_blank" rel="noreferrer">
-            APIキーを発行する
-          </a>
-          。キーはこのブラウザにだけ保存し、選んだAIの会社への通信にだけ使います。書き出しには含めません。
-        </p>
+        {custom ? (
+          <p className="muted small">キーはこのブラウザにだけ保存し、この接続先への通信にだけ使います。書き出しには含めません。</p>
+        ) : (
+          <p className="muted small">
+            <a href={provider.keyUrl} target="_blank" rel="noreferrer">
+              APIキーを発行する
+            </a>
+            。キーはこのブラウザにだけ保存し、選んだAIの会社への通信にだけ使います。書き出しには含めません。
+          </p>
+        )}
         <p className="muted small">{provider.note}</p>
 
         {s.provider === 'anthropic' ? (
@@ -188,31 +205,35 @@ export function SettingsScreen({
             </label>
             {listError && <p className="error">{listError}</p>}
             {models.length > 0 && <p className="muted small">{models.length}個のモデルが見つかりました。</p>}
-            <div className="row">
-              <label className="field">
-                入力の料金(任意)
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={price?.input ?? ''}
-                  onChange={(e) => setPrice({ input: e.target.value })}
-                  placeholder="$ / 100万トークン"
-                />
-              </label>
-              <label className="field">
-                出力の料金(任意)
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={price?.output ?? ''}
-                  onChange={(e) => setPrice({ output: e.target.value })}
-                  placeholder="$ / 100万トークン"
-                />
-              </label>
-            </div>
-            <p className="muted small">料金を入れると、費用の目安を計算します。空のままでも使えます。</p>
+            {!custom && (
+              <>
+                <div className="row">
+                  <label className="field">
+                    入力の料金(任意)
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={price?.input ?? ''}
+                      onChange={(e) => setPrice({ input: e.target.value })}
+                      placeholder="$ / 100万トークン"
+                    />
+                  </label>
+                  <label className="field">
+                    出力の料金(任意)
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={price?.output ?? ''}
+                      onChange={(e) => setPrice({ output: e.target.value })}
+                      placeholder="$ / 100万トークン"
+                    />
+                  </label>
+                </div>
+                <p className="muted small">料金を入れると、費用の目安を計算します。空のままでも使えます。</p>
+              </>
+            )}
           </>
         )}
 

@@ -30,7 +30,7 @@ npm run build
 
 ## AI分析
 
-公開版はClaudeとOpenRouterから選べます。手元の開発版(`npm run dev`)では、ChatGPTとGeminiも使えます。理由は [PUBLISHING.md](PUBLISHING.md) にまとめています。
+公開版はClaude、OpenRouter、カスタムAPI(OpenAI互換)から選べます。カスタムAPIはllama.cpp、Ollama、LM Studio、vLLMなどのローカルLLM用で、公開版から接続できるのは `localhost` と `127.0.0.1` だけです。手元の開発版(`npm run dev`)では、ChatGPTとGeminiも使えます。理由は [PUBLISHING.md](PUBLISHING.md) にまとめています。
 
 利用者自身のAPIキーをブラウザに保存し、ブラウザから直接各社のAPIを呼びます。投稿の全量は送らず、抽出した分だけを送ります。
 

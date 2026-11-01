@@ -2,7 +2,7 @@ import type { ProviderId } from '../db'
 
 export type Price = { input: number; output: number }
 
-export type Connection = { provider: ProviderId; apiKey: string; model: string; price?: Price }
+export type Connection = { provider: ProviderId; apiKey: string; model: string; price?: Price; baseUrl?: string }
 
 export type LlmRequest = {
   system: string
@@ -51,10 +51,17 @@ export const PROVIDERS: { id: ProviderId; label: string; keyHint: string; keyUrl
     keyUrl: 'https://openrouter.ai/keys',
     note: '18歳以上の方がご利用ください。モデルごとの提供元の規約も適用されます。',
   },
+  {
+    id: 'custom',
+    label: 'カスタムAPI(OpenAI互換)',
+    keyHint: 'なくても使えます',
+    keyUrl: '',
+    note: 'llama.cpp、Ollama、LM Studio、vLLMなどをこのPCで動かして使えます。公開版から接続できるのは localhost と 127.0.0.1 だけです。サーバー側で、このサイトからの接続(CORS)を許可してください。投稿が多いとモデルの読める量を超えることがあり、紙面の出来はモデルによって変わります。',
+  },
 ]
 
 // OpenAI と Google はキーをブラウザに置かないよう案内しているので、公開版では外して手元の開発版だけで使う
-const PUBLIC_PROVIDERS: ProviderId[] = ['anthropic', 'openrouter']
+const PUBLIC_PROVIDERS: ProviderId[] = ['anthropic', 'openrouter', 'custom']
 
 export function availableProviders(dev: boolean = import.meta.env.DEV) {
   return PROVIDERS.filter((p) => dev || PUBLIC_PROVIDERS.includes(p.id))
@@ -113,7 +120,30 @@ const priceOf = (price: Price | undefined, input: number, output: number) =>
 
 type OnText = ((text: string) => void) | undefined
 
-// OpenAI と OpenRouter は同じ Chat Completions 形式で呼べる
+const bearer = (apiKey: string): Record<string, string> => (apiKey ? { authorization: `Bearer ${apiKey}` } : {})
+
+// /v1 の省略や、/chat/completions まで書いた形も受け付ける
+export function customBase(url = '') {
+  const base = url.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '')
+  if (!/^https?:\/\//.test(base)) throw new Error('API Base URLは http:// か https:// から書いてください。')
+  return /^https?:\/\/[^/]+$/.test(base) ? `${base}/v1` : base
+}
+
+// fetch の失敗だけでは原因が分からないので、確認する場所を伝える
+async function reachCustom<T>(request: () => Promise<T>) {
+  try {
+    return await request()
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error(
+        'カスタムAPIに接続できませんでした。サーバーの起動、Base URL、CORSの許可を確認してください。公開版では localhost と 127.0.0.1 以外に接続できません。',
+      )
+    }
+    throw err
+  }
+}
+
+// OpenAI、OpenRouter、カスタムAPIは同じ Chat Completions 形式で呼べる
 async function chatCompletions(
   conn: Connection,
   req: LlmRequest,
@@ -123,7 +153,7 @@ async function chatCompletions(
 ): Promise<Completion> {
   const res = await post(
     options.url,
-    { authorization: `Bearer ${conn.apiKey}` },
+    bearer(conn.apiKey),
     {
       model: conn.model,
       messages: [
@@ -229,6 +259,13 @@ export function completeHttp(conn: Connection, req: LlmRequest, onText: OnText, 
         // 構造化出力に対応した提供元だけに送る
         extra: { provider: { require_parameters: true } },
       })
+    case 'custom':
+      return reachCustom(() =>
+        chatCompletions(conn, req, onText, signal, {
+          url: `${customBase(conn.baseUrl)}/chat/completions`,
+          maxTokensField: 'max_tokens',
+        }),
+      )
     default:
       return chatCompletions(conn, req, onText, signal, {
         url: 'https://api.openai.com/v1/chat/completions',
@@ -240,11 +277,17 @@ export function completeHttp(conn: Connection, req: LlmRequest, onText: OnText, 
 const OPENAI_NOT_CHAT = /audio|realtime|image|transcribe|tts|search|embedding|moderation|sora|codex/
 
 // モデルの入れ替わりが早いので、固定で持たず各社の一覧から選んでもらう
-export async function listModels(provider: ProviderId, apiKey: string): Promise<ModelInfo[]> {
+export async function listModels(provider: ProviderId, apiKey: string, baseUrl?: string): Promise<ModelInfo[]> {
   const get = async (url: string, headers: Record<string, string>) => {
     const res = await fetch(url, { headers })
     if (!res.ok) throw await toError(res)
     return res.json()
+  }
+
+  if (provider === 'custom') {
+    const url = `${customBase(baseUrl)}/models`
+    const { data } = await reachCustom(() => get(url, bearer(apiKey)))
+    return (data as { id: string }[]).map(({ id }) => ({ id }))
   }
 
   if (provider === 'openai') {

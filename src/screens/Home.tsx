@@ -63,9 +63,10 @@ export function Home({ sync, account, go }: { sync: SyncState; account: string; 
       return null
     }
     const conn = connectionFrom(await getSettings())
-    if (conn.apiKey && conn.model) return conn
+    const hasKey = conn.apiKey || conn.provider === 'custom'
+    if (hasKey && conn.model) return conn
     setError(
-      conn.apiKey
+      hasKey
         ? 'AIのモデルが選ばれていません。設定から選んでください。'
         : 'AIの分析にはAPIキーが必要です。設定から登録してください。',
     )

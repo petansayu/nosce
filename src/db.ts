@@ -110,13 +110,15 @@ export type SavedResult = {
   truncated?: boolean
 }
 
-export type ProviderId = 'anthropic' | 'openai' | 'gemini' | 'openrouter'
+export type ProviderId = 'anthropic' | 'openai' | 'gemini' | 'openrouter' | 'custom'
 
 export type Settings = {
   relays: string[]
   provider: ProviderId
   keys: Partial<Record<ProviderId, string>>
   models: Partial<Record<ProviderId, string>>
+  // カスタムAPI(OpenAI互換)の Base URL
+  customUrl: string
   // "provider:model" ごとの料金(100万トークンあたりのドル)。一覧にない会社は利用者が入力する
   prices: Record<string, { input: number; output: number }>
   tlDays: number
@@ -135,6 +137,7 @@ export const DEFAULT_SETTINGS: Settings = {
   provider: 'anthropic',
   keys: {},
   models: { anthropic: 'claude-opus-5-5' },
+  customUrl: 'http://127.0.0.1:8080/v1',
   prices: {},
   tlDays: 90,
 }

@@ -35,6 +35,7 @@ export function connectionFrom(settings: Settings): Connection {
     apiKey: settings.keys[provider] ?? '',
     model,
     price: claude ? { input: claude.input, output: claude.output } : settings.prices[`${provider}:${model}`],
+    ...(provider === 'custom' ? { baseUrl: settings.customUrl } : {}),
   }
 }
 
@@ -121,7 +122,8 @@ function explainStatus(status: number | undefined, message: string) {
   if (status === 402) return 'APIの残高が足りません。'
   if (status === 404) return 'このモデルは使えません。設定で別のモデルを選んでください。'
   if (status === 429) return '利用上限に達しました。少し待ってから試してください。'
-  return `AIからエラーが返りました(${status})。設定で別のモデルも試してください。`
+  const detail = message ? `(${message})` : ''
+  return `AIからエラーが返りました(${status})。設定で別のモデルも試してください。${detail}`
 }
 
 export function explainError(err: unknown): string {

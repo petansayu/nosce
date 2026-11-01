@@ -9,7 +9,8 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' data: wss: https://api.anthropic.com https://openrouter.ai",
+  // カスタムAPIは利用者のPCの中だけ許可する
+  "connect-src 'self' data: wss: https://api.anthropic.com https://openrouter.ai http://localhost:* http://127.0.0.1:*",
   "base-uri 'none'",
   "form-action 'none'",
 ].join('; ')

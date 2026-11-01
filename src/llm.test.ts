@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { complete, connectionFrom, estimate, explainError } from './analysis/llm'
-import { ProviderError, availableProviders, listModels, type Connection } from './analysis/providers'
+import { ProviderError, availableProviders, customBase, listModels, type Connection } from './analysis/providers'
 import { parseJson } from './analysis/result'
 import { codeChallenge, finishOpenRouterLogin, loginUrl } from './analysis/openrouterLogin'
 import { getSettings, migrateSettings } from './db'
@@ -220,6 +220,53 @@ describe('OpenRouter', () => {
   })
 })
 
+describe('カスタムAPI', () => {
+  const conn: Connection = { provider: 'custom', apiKey: '', model: 'local', baseUrl: 'http://127.0.0.1:8080/v1/' }
+
+  it('指定のURLへキーなしで送る', async () => {
+    const calls = stubFetch(() => dataStream([{ choices: [{ delta: { content: 'はい' }, finish_reason: 'stop' }] }]))
+    const out = await complete(conn, req)
+    expect(calls[0].url).toBe('http://127.0.0.1:8080/v1/chat/completions')
+    expect(calls[0].headers.get('authorization')).toBeNull()
+    expect(calls[0].body.max_tokens).toBe(16000)
+    expect(out.text).toBe('はい')
+    expect(out.costUsd).toBeUndefined()
+  })
+  it('キーがあれば付ける', async () => {
+    const calls = stubFetch(() => dataStream([]))
+    await complete({ ...conn, apiKey: 'dummy' }, req)
+    expect(calls[0].headers.get('authorization')).toBe('Bearer dummy')
+  })
+  it('読める量を超えたときなどはサーバーの説明を見せる', () => {
+    expect(explainError(new ProviderError(400, 'context size exceeded'))).toContain('context size exceeded')
+  })
+  it('Base URLの書き方の違いを吸収する', () => {
+    expect(customBase('http://localhost:11434')).toBe('http://localhost:11434/v1')
+    expect(customBase(' http://localhost:1234/v1/ ')).toBe('http://localhost:1234/v1')
+    expect(customBase('http://localhost:1234/v1/chat/completions')).toBe('http://localhost:1234/v1')
+  })
+  it('URLでないものには送らない', async () => {
+    const calls = stubFetch(() => dataStream([]))
+    await expect(complete({ ...conn, baseUrl: '' }, req)).rejects.toThrow('API Base URL')
+    expect(calls).toHaveLength(0)
+  })
+  it('接続できないときは確認する場所を伝える', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    await expect(complete(conn, req)).rejects.toThrow('CORS')
+  })
+  it('モデル一覧をキーなしで取得する', async () => {
+    const calls = stubFetch(() => Response.json({ data: [{ id: 'local' }] }))
+    expect(await listModels('custom', '', 'http://127.0.0.1:8080/v1')).toEqual([{ id: 'local' }])
+    expect(calls[0].url).toBe('http://127.0.0.1:8080/v1/models')
+  })
+  it('設定のURLを接続に渡す', () => {
+    const s = migrateSettings({ provider: 'custom', models: { custom: 'local' } }, false)
+    expect(connectionFrom(s)).toMatchObject({ provider: 'custom', model: 'local', baseUrl: 'http://127.0.0.1:8080/v1' })
+  })
+})
+
 describe('OpenRouterのログイン', () => {
   const storageWith = (verifier?: string) => {
     const items = new Map(verifier ? [['openrouter-pkce-verifier', verifier]] : [])
@@ -266,9 +313,9 @@ describe('OpenRouterのログイン', () => {
 })
 
 describe('公開版のAI', () => {
-  it('公開版はClaudeとOpenRouterだけにする', () => {
-    expect(availableProviders(false).map((p) => p.id)).toEqual(['anthropic', 'openrouter'])
-    expect(availableProviders(true)).toHaveLength(4)
+  it('公開版はClaude、OpenRouter、カスタムAPIだけにする', () => {
+    expect(availableProviders(false).map((p) => p.id)).toEqual(['anthropic', 'openrouter', 'custom'])
+    expect(availableProviders(true)).toHaveLength(5)
   })
   it('公開版で使えない会社が保存されていたらClaudeに戻す', () => {
     expect(migrateSettings({ provider: 'openai' }, false).provider).toBe('anthropic')
