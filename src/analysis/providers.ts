@@ -56,7 +56,7 @@ export const PROVIDERS: { id: ProviderId; label: string; keyHint: string; keyUrl
     label: 'カスタムAPI(OpenAI互換)',
     keyHint: 'なくても使えます',
     keyUrl: '',
-    note: 'llama.cpp、Ollama、LM Studio、vLLMなどをこのPCで動かして使えます。公開版から接続できるのは localhost と 127.0.0.1 だけです。サーバー側で、このサイトからの接続(CORS)を許可してください。投稿が多いとモデルの読める量を超えることがあり、紙面の出来はモデルによって変わります。',
+    note: 'llama.cpp、Ollama、LM Studio、vLLMなどをこのPCで動かして使えます。公開版から接続できるのは localhost と 127.0.0.1 だけです。サーバー側で、このサイトからの接続(CORS)を許可してください。ブラウザにローカルネットワークへのアクセスの許可を求められたら、許可してください。投稿が多いとモデルの読める量を超えることがあり、紙面の出来はモデルによって変わります。',
   },
 ]
 
@@ -136,7 +136,7 @@ async function reachCustom<T>(request: () => Promise<T>) {
   } catch (err) {
     if (err instanceof TypeError) {
       throw new Error(
-        'カスタムAPIに接続できませんでした。サーバーの起動、Base URL、CORSの許可を確認してください。公開版では localhost と 127.0.0.1 以外に接続できません。',
+        'カスタムAPIに接続できませんでした。サーバーの起動、Base URL、CORSの許可を確認してください。ブラウザでローカルネットワークへのアクセスをブロックした場合は、アドレスバーのサイト設定から許可してください。公開版では localhost と 127.0.0.1 以外に接続できません。',
       )
     }
     throw err

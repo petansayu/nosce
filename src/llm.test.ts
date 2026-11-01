@@ -254,7 +254,7 @@ describe('カスタムAPI', () => {
     vi.stubGlobal('fetch', async () => {
       throw new TypeError('Failed to fetch')
     })
-    await expect(complete(conn, req)).rejects.toThrow('CORS')
+    await expect(complete(conn, req)).rejects.toThrow(/CORS.*ローカルネットワーク/)
   })
   it('モデル一覧をキーなしで取得する', async () => {
     const calls = stubFetch(() => Response.json({ data: [{ id: 'local' }] }))
