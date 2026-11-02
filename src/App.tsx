@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { finishOpenRouterLogin } from './analysis/openrouterLogin'
+import { Loading } from './components/Loading'
 import { db, getAccount, getKv, getSettings, setKv } from './db'
 import type { Phase, SyncProgress } from './nostr/sync'
 import { About } from './screens/About'
-import { Setup } from './screens/Setup'
 import { Home } from './screens/Home'
-import { Timeline } from './screens/Timeline'
-import { History } from './screens/History'
-import { Result } from './screens/Result'
-import { SettingsScreen } from './screens/Settings'
+
+// スマートフォンの起動を軽くするため、ホーム以外の画面は開くときに読み込む
+const Setup = lazy(() => import('./screens/Setup').then((m) => ({ default: m.Setup })))
+const Timeline = lazy(() => import('./screens/Timeline').then((m) => ({ default: m.Timeline })))
+const History = lazy(() => import('./screens/History').then((m) => ({ default: m.History })))
+const Result = lazy(() => import('./screens/Result').then((m) => ({ default: m.Result })))
+const SettingsScreen = lazy(() => import('./screens/Settings').then((m) => ({ default: m.SettingsScreen })))
 
 export type SyncState = {
   running: boolean
@@ -101,7 +104,7 @@ export function App() {
     )
   }
 
-  if (account === undefined) return null
+  if (account === undefined) return <Loading />
 
   if (!account) {
     return (
@@ -109,17 +112,19 @@ export function App() {
         {showAbout ? (
           <About onBack={() => setShowAbout(false)} />
         ) : (
-          <Setup
-            onAbout={() => setShowAbout(true)}
-            onStart={async (pubkey, verified) => {
-              // ブラウザの容量が足りないときに取得データを自動で消されにくくする
-              void navigator.storage?.persist?.()
-              await setKv('account', pubkey)
-              if (verified) await setKv('verifiedAccount', pubkey)
-              setAccount(pubkey)
-              void startSync(pubkey)
-            }}
-          />
+          <Suspense fallback={<Loading />}>
+            <Setup
+              onAbout={() => setShowAbout(true)}
+              onStart={async (pubkey, verified) => {
+                // ブラウザの容量が足りないときに取得データを自動で消されにくくする
+                void navigator.storage?.persist?.()
+                await setKv('account', pubkey)
+                if (verified) await setKv('verifiedAccount', pubkey)
+                setAccount(pubkey)
+                void startSync(pubkey)
+              }}
+            />
+          </Suspense>
         )}
       </main>
     )
@@ -139,28 +144,30 @@ export function App() {
         ))}
         {sync.running && <span className="nav-note">取得中…</span>}
       </nav>
-      {route.name === 'home' && <Home sync={sync} account={account} go={setRoute} />}
-      {route.name === 'timeline' && <Timeline key={route.focus} focus={route.focus} />}
-      {route.name === 'history' && <History go={setRoute} />}
-      {route.name === 'about' && <About />}
-      {route.name === 'result' && <Result key={route.id} id={route.id} go={setRoute} />}
-      {route.name === 'settings' && (
-        <SettingsScreen
-          sync={sync}
-          notice={notice}
-          onRefresh={() => startSync(account)}
-          onReset={async () => {
-            // 取得中のワーカーが削除後のDBへ書き込まないよう、先に止める
-            worker.current?.terminate()
-            worker.current = null
-            await db.delete()
-            await db.open()
-            setAccount(null)
-            setRoute({ name: 'home' })
-            setSync({ running: false, phases: {}, failed: [] })
-          }}
-        />
-      )}
+      <Suspense fallback={<Loading />}>
+        {route.name === 'home' && <Home sync={sync} account={account} go={setRoute} />}
+        {route.name === 'timeline' && <Timeline key={route.focus} focus={route.focus} />}
+        {route.name === 'history' && <History go={setRoute} />}
+        {route.name === 'about' && <About />}
+        {route.name === 'result' && <Result key={route.id} id={route.id} go={setRoute} />}
+        {route.name === 'settings' && (
+          <SettingsScreen
+            sync={sync}
+            notice={notice}
+            onRefresh={() => startSync(account)}
+            onReset={async () => {
+              // 取得中のワーカーが削除後のDBへ書き込まないよう、先に止める
+              worker.current?.terminate()
+              worker.current = null
+              await db.delete()
+              await db.open()
+              setAccount(null)
+              setRoute({ name: 'home' })
+              setSync({ running: false, phases: {}, failed: [] })
+            }}
+          />
+        )}
+      </Suspense>
     </main>
   )
 }

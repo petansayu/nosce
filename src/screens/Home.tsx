@@ -1,14 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
-import { db, getKv, getSettings, profileNames, setKv } from '../db'
-import { SignerLogin } from '../components/SignerLogin'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { db, getKv, getSettings, setKv, type ResultBody } from '../db'
 import { complete, connectionFrom, estimate, explainError, formatCost, type LlmRequest } from '../analysis/llm'
 import { PROVIDERS, type Connection } from '../analysis/providers'
 import { ALL_PRESETS } from '../analysis/morePresets'
-import { planRequest, prepareQuestion, runFreePreset, type Prepared, type Preset, type QuestionPlan } from '../analysis/presets'
+import { planRequest, type Prepared, type Preset, type QuestionPlan } from '../analysis/presets'
+import { runInWorker } from '../analysis/presetJobs'
 import { parseJson, toBody } from '../analysis/result'
+import { Loading } from '../components/Loading'
 import { SyncPanel } from '../components/SyncPanel'
 import { formatTime } from '../analysis/prompt'
 import type { Route, SyncState } from '../App'
+
+const SignerLogin = lazy(() => import('../components/SignerLogin').then((m) => ({ default: m.SignerLogin })))
+
+// 件数を数えるのは投稿が多いと重いので、取得中も間隔を空ける
+const COUNT_INTERVAL = 15000
+
+type Counts = { me: number; tl: number; first?: number; name?: string }
 
 const GROUPS = [
   { title: 'AIで遊ぶ', free: false },
@@ -26,7 +34,7 @@ type Pending = {
 }
 
 export function Home({ sync, account, go }: { sync: SyncState; account: string; go: (r: Route) => void }) {
-  const [counts, setCounts] = useState<{ me: number; tl: number; first?: number; name?: string }>()
+  const [counts, setCounts] = useState<Counts>()
   const [question, setQuestion] = useState('')
   const [pending, setPending] = useState<Pending>()
   const [busy, setBusy] = useState('')
@@ -36,17 +44,22 @@ export function Home({ sync, account, go }: { sync: SyncState; account: string; 
   const abort = useRef<AbortController | null>(null)
 
   useEffect(() => {
+    // 前回の件数を先に出して、裏で数え直す
+    void getKv<Counts>('homeCounts').then((saved) => saved && setCounts((current) => current ?? saved))
     const load = async () => {
-      const [me, total, first, names] = await Promise.all([
+      if (document.hidden) return
+      const [me, total, first, profile] = await Promise.all([
         db.posts.where('[source+created_at]').between(['me', 0], ['me', Infinity]).count(),
         db.posts.count(),
         db.posts.where('[source+created_at]').between(['me', 0], ['me', Infinity]).first(),
-        profileNames(),
+        db.profiles.get(account),
       ])
-      setCounts({ me, tl: total - me, first: first?.created_at, name: names.get(account) })
+      const next = { me, tl: total - me, first: first?.created_at, name: profile?.name }
+      setCounts(next)
+      await setKv('homeCounts', next)
     }
     void load()
-    const t = sync.running ? setInterval(load, 3000) : undefined
+    const t = sync.running ? setInterval(load, COUNT_INTERVAL) : undefined
     return () => clearInterval(t)
   }, [sync.running, account])
 
@@ -94,7 +107,7 @@ export function Home({ sync, account, go }: { sync: SyncState; account: string; 
     setBusy(`${preset.title}を準備中…`)
     try {
       if (preset.free) {
-        const body = preset.run ? await preset.run() : await runFreePreset(preset.id)
+        const body = await runInWorker<ResultBody>({ type: 'free', id: preset.id })
         const id = await db.results.add({
           title: preset.title,
           presetId: preset.id,
@@ -109,7 +122,8 @@ export function Home({ sync, account, go }: { sync: SyncState; account: string; 
       }
       const conn = await needConnection()
       if (!conn) return
-      await confirm(preset.title, await preset.prepare!(), conn, { presetId: preset.id })
+      const prepared = await runInWorker<Prepared>({ type: 'prepare', id: preset.id })
+      await confirm(preset.title, prepared, conn, { presetId: preset.id })
     } catch (err) {
       setError(explainError(err))
     } finally {
@@ -131,7 +145,7 @@ export function Home({ sync, account, go }: { sync: SyncState; account: string; 
       const today = formatTime(Date.now() / 1000).slice(0, 10)
       const planned = await complete(conn, planRequest(q, today), undefined, undefined, 'low')
       const plan = parseJson(planned.text) as QuestionPlan
-      const prepared = await prepareQuestion(q, plan)
+      const prepared = await runInWorker<Prepared>({ type: 'question', question: q, plan })
       await confirm(q, prepared, conn, { question: q })
     } catch (err) {
       setError(explainError(err))
@@ -215,7 +229,9 @@ export function Home({ sync, account, go }: { sync: SyncState; account: string; 
         <section className="card confirm">
           <h2>本人確認</h2>
           <p className="muted small">AI分析は、アカウントの持ち主だけが使えます。確認すると、もう一度プリセットを押せます。</p>
-          <SignerLogin expected={account} onDone={verified} />
+          <Suspense fallback={<Loading />}>
+            <SignerLogin expected={account} onDone={verified} />
+          </Suspense>
         </section>
       )}
 

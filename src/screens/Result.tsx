@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toPng } from 'html-to-image'
 import { db, getAccount, profileNames, type AppraisalItem, type SavedResult } from '../db'
+import { Loading } from '../components/Loading'
 import { Newspaper } from '../components/Newspaper'
 import { AppraisalSheet, AwardSheet, DialogueSheet, DriftSheet, PowerSheet, WordsSheet } from '../components/Sheets'
 import { ThemeSheet } from '../components/ThemeSheets'
@@ -151,7 +152,7 @@ export function Result({ id, go }: { id: number; go: Go }) {
     })
   }, [id])
 
-  if (!result) return null
+  if (!result) return <Loading />
 
   const onCheck = async (index: number, check: AppraisalItem['check']) => {
     if (result.body.type !== 'appraisal') return

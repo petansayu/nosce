@@ -84,6 +84,16 @@ describe('Claude', () => {
     stubFetch(() => sse('max_tokens', '途中'))
     expect((await complete(claude, req)).truncated).toBe(true)
   })
+
+  it('SDKのエラーを説明文に直す', async () => {
+    stubFetch(() => new Response('{}', { status: 401 }))
+    expect(explainError(await complete(claude, req).catch((e) => e))).toContain('APIキー')
+    stubFetch(() => {
+      throw new TypeError('Failed to fetch')
+    })
+    const out = await complete(claude, req).catch((e) => e)
+    expect(explainError(out)).toContain('接続できませんでした')
+  })
 })
 
 describe('OpenAI', () => {

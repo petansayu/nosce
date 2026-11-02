@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import type AnthropicClient from '@anthropic-ai/sdk'
 import type { Settings } from '../db'
 import {
   MAX_TOKENS,
@@ -39,9 +39,17 @@ export function connectionFrom(settings: Settings): Connection {
   }
 }
 
-function clientFor(apiKey: string) {
-  // キーは利用者自身のもので、このブラウザから Anthropic へ直接送る
-  return new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+// SDK は大きいので、Claude を使うときだけ読み込む。エラーは explainError が SDK なしで読める形に直す
+async function withClaude<T>(apiKey: string, request: (client: AnthropicClient) => Promise<T>) {
+  const { default: Anthropic } = await import('@anthropic-ai/sdk')
+  try {
+    // キーは利用者自身のもので、このブラウザから Anthropic へ直接送る
+    return await request(new Anthropic({ apiKey, dangerouslyAllowBrowser: true }))
+  } catch (err) {
+    if (err instanceof Anthropic.APIConnectionError) throw new TypeError(err.message)
+    if (err instanceof Anthropic.APIError) throw new ProviderError(err.status ?? 0, '')
+    throw err
+  }
 }
 
 const costOf = (conn: Connection, input: number, output: number) =>
@@ -55,11 +63,13 @@ export async function estimate(conn: Connection, req: LlmRequest) {
   const inputTokens =
     conn.provider === 'anthropic'
       ? (
-          await clientFor(conn.apiKey).messages.countTokens({
-            model: conn.model,
-            system: req.system,
-            messages: [{ role: 'user', content: req.user }],
-          })
+          await withClaude(conn.apiKey, (client) =>
+            client.messages.countTokens({
+              model: conn.model,
+              system: req.system,
+              messages: [{ role: 'user', content: req.user }],
+            }),
+          )
         ).input_tokens
       : Math.round((req.system.length + req.user.length) * TOKENS_PER_CHAR)
   return { inputTokens, usd: costOf(conn, inputTokens, EXPECTED_OUTPUT_TOKENS) }
@@ -72,23 +82,25 @@ async function completeClaude(
   signal?: AbortSignal,
   effort: 'low' | 'medium' = 'medium',
 ): Promise<Completion> {
-  const stream = clientFor(conn.apiKey).beta.messages.stream(
-    {
-      model: conn.model,
-      max_tokens: MAX_TOKENS,
-      system: req.system,
-      messages: [{ role: 'user', content: req.user }],
-      output_config: {
-        effort,
-        ...(req.schema ? { format: { type: 'json_schema' as const, schema: req.schema } } : {}),
+  const message = await withClaude(conn.apiKey, (client) => {
+    const stream = client.beta.messages.stream(
+      {
+        model: conn.model,
+        max_tokens: MAX_TOKENS,
+        system: req.system,
+        messages: [{ role: 'user', content: req.user }],
+        output_config: {
+          effort,
+          ...(req.schema ? { format: { type: 'json_schema' as const, schema: req.schema } } : {}),
+        },
+        // Haiku にはサーバー側フォールバックがない
+        ...(conn.model.startsWith('claude-haiku') ? {} : { betas: [FALLBACK_BETA], fallbacks: 'default' as const }),
       },
-      // Haiku にはサーバー側フォールバックがない
-      ...(conn.model.startsWith('claude-haiku') ? {} : { betas: [FALLBACK_BETA], fallbacks: 'default' as const }),
-    },
-    { signal },
-  )
-  if (onText) stream.on('text', (_delta, snapshot) => onText(snapshot))
-  const message = await stream.finalMessage()
+      { signal },
+    )
+    if (onText) stream.on('text', (_delta, snapshot) => onText(snapshot))
+    return stream.finalMessage()
+  })
   if (message.stop_reason === 'refusal') {
     throw new RefusalError(message.stop_details?.explanation ?? '')
   }
@@ -131,8 +143,6 @@ export function explainError(err: unknown): string {
     return 'AIがこの依頼を断りました。質問の表現を変えて試してください。'
   }
   if (err instanceof SyntaxError) return 'AIの返答を読み取れませんでした。もう一度試すか、別のモデルを選んでください。'
-  if (err instanceof Anthropic.APIConnectionError) return 'AIに接続できませんでした。通信状況を確認してください。'
-  if (err instanceof Anthropic.APIError) return explainStatus(err.status, '')
   if (err instanceof ProviderError) return explainStatus(err.status, err.message)
   if (err instanceof TypeError) return 'AIに接続できませんでした。通信状況を確認してください。'
   return err instanceof Error ? err.message : String(err)

@@ -64,6 +64,7 @@ input[type='checkbox'] { width: auto; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
 .setup { margin-top: 12vh; }
 .muted { color: var(--muted); }
+.loading { padding: 24px 0; text-align: center; }
 .small { font-size: 13px; }
 .error { color: var(--danger); font-size: 14px; margin-top: 8px; }
 .section { margin: 20px 0 8px; }

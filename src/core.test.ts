@@ -16,6 +16,7 @@ import {
   stampData,
   trendWords,
 } from './analysis/morePresets'
+import { runPresetJob } from './analysis/presetJobs'
 import { walkRange, type FetchPage } from './nostr/walk'
 import { computeStats, computePower, wordRanking } from './analysis/stats'
 import { stratifiedSample } from './analysis/sampling'
@@ -233,6 +234,31 @@ describe('統計', () => {
     const { years, hall } = wordRanking(Array.from({ length: 3 }, () => post({ content: 'ラーメン', created_at })))
     expect(hall).toEqual([])
     expect(years[0].words[0].word).toBe('ラーメン')
+  })
+})
+
+describe('ワーカーで動かす処理', () => {
+  beforeEach(async () => {
+    await db.posts.clear()
+    await db.posts.bulkPut([
+      post({ id: 'a', source: 'me', created_at: 1_750_000_000, content: 'ラーメンを食べた話をしている' }),
+      post({ id: 'b', source: 'me', created_at: 1_760_000_000, content: 'ダーツをした話をしている' }),
+    ])
+  })
+
+  it('全プリセットの結果をワーカーから受け渡せる', async () => {
+    for (const { id, free } of ALL_PRESETS) {
+      const out = await runPresetJob({ type: free ? 'free' : 'prepare', id })
+      expect(() => structuredClone(out)).not.toThrow()
+    }
+  })
+  it('自由質問の準備もできる', async () => {
+    const plan = { mode: 'overview', from: null, to: null, scope: 'me', keywords: [] } as const
+    const out = await runPresetJob({ type: 'question', question: '趣味は?', plan: { ...plan, keywords: [] } })
+    expect(out).toMatchObject({ postCount: 2 })
+  })
+  it('知らないプリセットはエラーにする', async () => {
+    await expect(runPresetJob({ type: 'free', id: 'none' })).rejects.toThrow('見つかりません')
   })
 })
 

@@ -4,6 +4,7 @@ import { CLAUDE_MODELS, explainError } from '../analysis/llm'
 import { startOpenRouterLogin } from '../analysis/openrouterLogin'
 import { PROVIDERS, availableProviders, listModels, type ModelInfo } from '../analysis/providers'
 import { normalizeRelays } from '../nostr/relays'
+import { Loading } from '../components/Loading'
 import { SyncPanel } from '../components/SyncPanel'
 import type { SyncState } from '../App'
 
@@ -41,7 +42,7 @@ export function SettingsScreen({
     })
   }, [])
 
-  if (!s) return null
+  if (!s) return <Loading />
 
   const update = (patch: Partial<Settings>) => {
     setS({ ...s, ...patch })

@@ -11,9 +11,21 @@
     <meta property="og:title" content="じぶん分析 for Nostr" />
     <meta property="og:description" content="Nostrの自分の投稿とタイムラインから、新聞や鑑定書を作って自分をネタに遊ぶアプリ。" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <style>
+      /* JSを読み終わるまでの表示。古いページが残って進まないときだけ案内を出す */
+      .boot { padding: 30vh 16px 0; text-align: center; font-family: system-ui, sans-serif; color: #77756e; }
+      .boot small { display: block; margin-top: 12px; opacity: 0; animation: boot-hint 0s 10s forwards; }
+      @keyframes boot-hint { to { opacity: 1; } }
+      @media (prefers-color-scheme: dark) { html { background: #17171a; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot">
+        読み込み中…
+        <small>表示されないときは、少し待ってからページを開き直してください。</small>
+      </div>
+    </div>
     <noscript>このアプリの利用にはJavaScriptが必要です。</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
