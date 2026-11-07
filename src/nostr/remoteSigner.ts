@@ -11,7 +11,8 @@ const APPROVE_TIMEOUT_MS = 3 * 60_000
 // スマホでアプリを切り替えると接続が切れるので、戻ったときに繋ぎ直す
 const newPool = () => new SimplePool({ enablePing: true, enableReconnect: true })
 
-export function createConnectRequest() {
+// 本人確認(22242)だけなら既定のまま。共有では投稿(1)と画像の認証(24242)も頼む
+export function createConnectRequest(perms = ['sign_event:22242']) {
   const secretKey = generateSecretKey()
   const uri = createNostrConnectURI({
     clientPubkey: getPublicKey(secretKey),
@@ -19,7 +20,7 @@ export function createConnectRequest() {
     secret: crypto.randomUUID(),
     name: SITE.name,
     url: SITE.url,
-    perms: ['sign_event:22242'],
+    perms,
   })
   return { secretKey, uri }
 }

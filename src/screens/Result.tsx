@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toPng } from 'html-to-image'
 import { db, getAccount, profileNames, type AppraisalItem, type SavedResult } from '../db'
 import { Loading } from '../components/Loading'
 import { Newspaper } from '../components/Newspaper'
+import { SharePanel } from '../components/SharePanel'
 import { AppraisalSheet, AwardSheet, DialogueSheet, DriftSheet, PowerSheet, WordsSheet } from '../components/Sheets'
 import { ThemeSheet } from '../components/ThemeSheets'
 import { formatCost } from '../analysis/llm'
@@ -142,15 +143,42 @@ export function Result({ id, go }: { id: number; go: Go }) {
   const [result, setResult] = useState<SavedResult>()
   const [name, setName] = useState('あなた')
   const [error, setError] = useState('')
+  const [account, setAccount] = useState<string>()
+  const [sharing, setSharing] = useState(false)
   const sheet = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     void db.results.get(id).then(setResult)
     void Promise.all([getAccount(), profileNames()]).then(([account, names]) => {
+      setAccount(account)
       const own = account && names.get(account)
       if (own) setName(own)
     })
   }, [id])
+
+  // 紙面は縮小して見せているので、等倍に戻して画像にする
+  const renderPng = useCallback(async () => {
+    const root = sheet.current!
+    const page = root.querySelector<HTMLElement>('[data-page]')
+    const target = page ?? root
+    const url = page
+      ? await toPng(page, {
+          width: page.offsetWidth,
+          height: page.offsetHeight,
+          style: { transform: 'none' },
+          pixelRatio: 2,
+        })
+      : await toPng(root, {
+          backgroundColor: getComputedStyle(document.body).backgroundColor,
+          pixelRatio: 2,
+        })
+    return { url, width: target.offsetWidth * 2, height: target.offsetHeight * 2 }
+  }, [])
+
+  const makeImage = useCallback(async () => {
+    const { url, width, height } = await renderPng()
+    return { blob: await (await fetch(url)).blob(), width, height }
+  }, [renderPng])
 
   if (!result) return <Loading />
 
@@ -166,18 +194,7 @@ export function Result({ id, go }: { id: number; go: Go }) {
 
   const saveImage = async () => {
     try {
-      const page = sheet.current!.querySelector<HTMLElement>('[data-page]')
-      const url = page
-        ? await toPng(page, {
-            width: page.offsetWidth,
-            height: page.offsetHeight,
-            style: { transform: 'none' },
-            pixelRatio: 2,
-          })
-        : await toPng(sheet.current!, {
-            backgroundColor: getComputedStyle(document.body).backgroundColor,
-            pixelRatio: 2,
-          })
+      const { url } = await renderPng()
       const a = document.createElement('a')
       a.href = url
       a.download = `${result.title.slice(0, 30)}.png`
@@ -192,9 +209,15 @@ export function Result({ id, go }: { id: number; go: Go }) {
     <section className="card">
       <div className="row spread">
         <button onClick={() => go({ name: 'history' })}>履歴へ</button>
-        <button onClick={saveImage}>画像で保存</button>
+        <div className="row">
+          {account && !sharing && <button onClick={() => setSharing(true)}>Nostrに共有</button>}
+          <button onClick={saveImage}>画像で保存</button>
+        </div>
       </div>
       {error && <p className="error">{error}</p>}
+      {sharing && account && (
+        <SharePanel title={result.title} account={account} makeImage={makeImage} onClose={() => setSharing(false)} />
+      )}
       <div ref={sheet} className="sheet">
         {body.type === 'text' && (
           <>

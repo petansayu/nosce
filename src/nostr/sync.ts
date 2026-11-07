@@ -192,6 +192,8 @@ export async function runSync(cfg: SyncConfig, report: (p: SyncProgress) => void
     const mine = relayEvent ? parseRelayList(relayEvent) : { read: [], write: [] }
     const follows = followEvent ? parseFollows(followEvent).filter((p) => p !== me) : []
     await setKv('follows', follows)
+    // 共有するときの投稿先に使う
+    await setKv('writeRelays', mine.write)
     await saveProfiles(meta.filter((e) => e.kind === 0))
 
     const writeRelays = new Map<string, string[]>()

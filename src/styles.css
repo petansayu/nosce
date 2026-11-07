@@ -242,6 +242,9 @@ input[type='checkbox'] { width: auto; }
 .setup h2 { margin-top: 16px; }
 .setup-or { border-top: 1px solid var(--line); padding-top: 14px; }
 .setup .row button { white-space: nowrap; }
+.share { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.share h3, .share p { margin: 0; }
+.share-preview { max-width: 100%; max-height: 360px; object-fit: contain; align-self: flex-start; border: 1px solid var(--line); border-radius: 6px; }
 .signer { display: flex; flex-direction: column; gap: 8px; }
 .signer p { margin: 0; }
 .signer-connect { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }

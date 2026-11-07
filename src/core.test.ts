@@ -1,12 +1,13 @@
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from 'nostr-tools/pure'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type Event, type EventTemplate } from 'nostr-tools/pure'
 import { nip19 } from 'nostr-tools'
 import { db, type Post } from './db'
 import { parseAccount, saveEvents } from './nostr/events'
 import { identify, proveOwnership } from './nostr/identity'
 import { normalizeRelays, planRelays } from './nostr/relays'
 import { nextAfterIdle } from './nostr/sync'
+import { sha256Hex, shareEvent, uploadImage } from './nostr/share'
 import {
   ALL_PRESETS,
   calendarData,
@@ -410,5 +411,52 @@ describe('抽出と引用', () => {
   it('的中率を数える', () => {
     const item = { label: '', value: '', reason: '', confidence: '高' as const, evidence: [] }
     expect(hitRate([{ ...item, check: 'hit' }, { ...item, check: 'miss' }, item])).toEqual({ hits: 1, checked: 2 })
+  })
+})
+
+describe('Nostrへの共有', () => {
+  const sk = generateSecretKey()
+  const signer = { signEvent: async (t: EventTemplate) => finalizeEvent(t, sk) }
+
+  it('Blossomの認証を付けて画像をアップロードする', async () => {
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
+    const calls: { url: string; init: RequestInit }[] = []
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      calls.push({ url, init })
+      return Response.json({ url: 'https://img.example/abc.png', sha256: 'abc', type: 'image/png' })
+    })
+    try {
+      const out = await uploadImage('https://img.example', blob, { width: 10, height: 20 }, signer)
+      expect(calls[0].url).toBe('https://img.example/upload')
+      expect(calls[0].init.method).toBe('PUT')
+      const headers = calls[0].init.headers as Record<string, string>
+      const bytes = Uint8Array.from(atob(headers.authorization.replace('Nostr ', '')), (c) => c.charCodeAt(0))
+      const auth = JSON.parse(new TextDecoder().decode(bytes))
+      expect(auth.kind).toBe(24242)
+      expect(auth.tags).toContainEqual(['t', 'upload'])
+      expect(auth.tags).toContainEqual(['x', await sha256Hex(blob)])
+      expect(verifyEvent(auth)).toBe(true)
+      expect(out).toMatchObject({ url: 'https://img.example/abc.png', width: 10, height: 20 })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+  it('アップロードの失敗理由を伝える', async () => {
+    vi.stubGlobal('fetch', async () => new Response('', { status: 413, headers: { 'x-reason': 'too large' } }))
+    try {
+      const blob = new Blob(['x'], { type: 'image/png' })
+      await expect(uploadImage('https://img.example', blob, { width: 1, height: 1 }, signer)).rejects.toThrow('too large')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+  it('本文のハッシュタグと画像の情報をタグにする', () => {
+    const image = { url: 'https://img.example/abc.png', sha256: 'abc', type: 'image/png', width: 10, height: 20 }
+    const event = shareEvent('鑑定書\n\n#じぶん分析 #Nostr\nhttps://petansayu.github.io/nosce/', image)
+    expect(event.kind).toBe(1)
+    expect(event.content.endsWith('\nhttps://img.example/abc.png')).toBe(true)
+    expect(event.tags).toContainEqual(['t', 'じぶん分析'])
+    expect(event.tags).toContainEqual(['t', 'nostr'])
+    expect(event.tags).toContainEqual(['imeta', 'url https://img.example/abc.png', 'm image/png', 'x abc', 'dim 10x20'])
   })
 })

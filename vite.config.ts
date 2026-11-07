@@ -9,8 +9,8 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  // カスタムAPIは利用者のPCの中だけ許可する
-  "connect-src 'self' data: wss: https://api.anthropic.com https://openrouter.ai http://localhost:* http://127.0.0.1:*",
+  // カスタムAPIは利用者のPCの中だけ許可する。画像サーバーは src/nostr/share.ts の IMAGE_SERVERS と同じもの
+  "connect-src 'self' data: wss: https://api.anthropic.com https://openrouter.ai http://localhost:* http://127.0.0.1:* https://blossom.primal.net https://blossom.band",
   "base-uri 'none'",
   "form-action 'none'",
 ].join('; ')

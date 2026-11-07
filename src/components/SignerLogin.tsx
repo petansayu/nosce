@@ -4,7 +4,22 @@ import { connectBunker, createConnectRequest, waitForSigner } from '../nostr/rem
 
 const NOT_OWNER = 'このアカウントの鍵で署名してください。'
 
-export function SignerLogin({ expected, onDone }: { expected?: string; onDone: (pubkey: string) => void }) {
+export type HeldSigner = Signer & { close?: () => Promise<void> }
+
+// keep のときは署名アプリとの接続を閉じずに渡す。閉じるのは受け取った側
+export function SignerLogin({
+  expected,
+  onDone,
+  perms,
+  keep = false,
+  verb = '確認',
+}: {
+  expected?: string
+  onDone: (pubkey: string, signer: HeldSigner) => void
+  perms?: string[]
+  keep?: boolean
+  verb?: string
+}) {
   const [connectUri, setConnectUri] = useState('')
   const [bunker, setBunker] = useState('')
   const [busy, setBusy] = useState('')
@@ -14,11 +29,12 @@ export function SignerLogin({ expected, onDone }: { expected?: string; onDone: (
 
   useEffect(() => () => abort.current?.abort(), [])
 
-  const finish = async (signer: Signer) => {
+  const finish = async (signer: HeldSigner) => {
     setBusy('署名を承認してください…')
     const pubkey = await identify(signer, expected)
-    if (pubkey) onDone(pubkey)
+    if (pubkey) onDone(pubkey, signer)
     else setError(NOT_OWNER)
+    if (!keep || !pubkey) await signer.close?.()
   }
 
   const run = async (start: () => Promise<void>) => {
@@ -43,13 +59,12 @@ export function SignerLogin({ expected, onDone }: { expected?: string; onDone: (
     abort.current?.abort()
     const controller = new AbortController()
     abort.current = controller
-    const request = createConnectRequest()
+    const request = createConnectRequest(perms)
     setConnectUri(request.uri)
     void run(async () => {
       setBusy('署名アプリの接続を待っています…')
       const signer = await waitForSigner(request, controller.signal)
       await finish(signer)
-      await signer.close()
     })
   }
 
@@ -58,7 +73,6 @@ export function SignerLogin({ expected, onDone }: { expected?: string; onDone: (
       setBusy('接続しています…')
       const signer = await connectBunker(bunker)
       await finish(signer)
-      await signer.close()
     })
 
   const copy = async () => {
@@ -70,9 +84,9 @@ export function SignerLogin({ expected, onDone }: { expected?: string; onDone: (
     <div className="signer">
       <div className="row wrap">
         <button className="primary" onClick={useExtension}>
-          拡張機能で確認
+          拡張機能で{verb}
         </button>
-        <button onClick={useApp}>署名アプリで確認</button>
+        <button onClick={useApp}>署名アプリで{verb}</button>
       </div>
       <p className="muted small">パソコンはNIP-07の拡張機能、スマホはAmberなどの署名アプリが使えます。</p>
 
